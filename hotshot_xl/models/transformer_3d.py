@@ -49,13 +49,21 @@ class Transformer3DModel(Transformer2DModel):
             positional_embedding: Optional[torch.Tensor] = None,
             return_dict: bool = True,
     ):
+        def process_video(hidden_states, encoder_hidden_states):
+            f = hidden_states.shape[2]
+            hidden_states = rearrange(hidden_states, "b c f h w -> (b f) c h w")
+            encoder_hidden_states = repeat(encoder_hidden_states, 'b n c -> (b f) n c', f=f)
+            return hidden_states, encoder_hidden_states, f
+
+        def process_output(hidden_states, is_video, f):
+            if is_video:
+                hidden_states = rearrange(hidden_states, "(b f) c h w -> b c f h w", f=f)
+            return hidden_states
 
         is_video = len(hidden_states.shape) == 5
 
         if is_video:
-            f = hidden_states.shape[2]
-            hidden_states = rearrange(hidden_states, "b c f h w -> (b f) c h w")
-            encoder_hidden_states = repeat(encoder_hidden_states, 'b n c -> (b f) n c', f=f)
+            hidden_states, encoder_hidden_states, f = process_video(hidden_states, encoder_hidden_states)
 
         hidden_states = super(Transformer3DModel, self).forward(hidden_states,
                                                                 encoder_hidden_states,
@@ -66,10 +74,10 @@ class Transformer3DModel(Transformer2DModel):
                                                                 encoder_attention_mask,
                                                                 return_dict=False)[0]
 
-        if is_video:
-            hidden_states = rearrange(hidden_states, "(b f) c h w -> b c f h w", f=f)
+        hidden_states = process_output(hidden_states, is_video, f if is_video else None)
 
         if not return_dict:
             return (hidden_states,)
 
         return Transformer3DModelOutput(sample=hidden_states)
+}
